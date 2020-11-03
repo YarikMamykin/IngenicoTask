@@ -2,6 +2,8 @@
 #include <thread>
 #include <vector>
 #include <cstdlib>
+#include <cstdio>
+#include <list>
 
 #include "ClientsDataQueue.hpp"
 #include "Client.hpp"
@@ -63,6 +65,7 @@ int main(int argc, char** argv) {
   clients::ClientsDataQueue data_queue;
   std::vector<BYTE> client_priorities;
   std::string log_file_path;
+  bool stop_clients_requests = false;
 
   // passing argc-1 because first argument is the name of program
   if(!process_args(argc-1, argv, client_priorities, log_file_path)) {
@@ -70,11 +73,20 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  std::thread client_thread([&data_queue, client_priorities]() -> void {
-    for(const auto i : client_priorities) {
-      clients::Client client(i, generate_client_id(i));
-      client.send_data(data_queue);
-    }
+  std::thread client_thread([&data_queue, client_priorities, &stop_clients_requests]() -> void {
+      std::list<clients::Client> clients_list;
+      for(const auto i : client_priorities) {
+        clients::Client client(i, generate_client_id(i));
+        client.send_data(data_queue);
+        clients_list.push_back(client);
+      }
+
+      while(!stop_clients_requests) {
+        for(auto& client : clients_list) {
+          client.send_data(data_queue);
+          std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+      }
   });
 
   std::thread server_thread([&data_queue, log_file_path]() -> void {
@@ -91,6 +103,9 @@ int main(int argc, char** argv) {
       }
   });
 
+  getchar(); // wait for user key press
+
+  stop_clients_requests = true;
 
   client_thread.join();
   server_thread.join();
